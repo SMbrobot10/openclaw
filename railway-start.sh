@@ -19,7 +19,8 @@ cat > "$CONFIG_PATH" <<'EOF'
     },
     "controlUi": {
       "enabled": true
-    }
+    },
+    "trustedProxies": ["100.64.0.0/10"]
   }
 }
 EOF
