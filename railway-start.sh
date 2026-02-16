@@ -16,7 +16,7 @@ cat > "$CONFIG_PATH" <<'EOF'
       "mode": "token"
     },
     "controlUi": {
-      "dangerouslyDisableDeviceAuth": true
+      "allowInsecureAuth": true
     }
   }
 }
