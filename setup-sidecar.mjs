@@ -24,19 +24,26 @@ function sendReq(ws, method, params = {}) {
   return id;
 }
 
+// Native Node.js WebSocket uses MessageEvent objects with addEventListener,
+// so we extract .data from the event. This helper parses the JSON payload.
+function parseWsMessage(ev) {
+  try {
+    const raw = typeof ev === "object" && ev !== null && "data" in ev ? ev.data : ev;
+    return JSON.parse(String(raw));
+  } catch {
+    return null;
+  }
+}
+
 function waitForRes(ws, id, timeoutMs = 15_000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`timeout waiting for res id=${id}`)),
       timeoutMs,
     );
-    function onMsg(raw) {
-      let msg;
-      try {
-        msg = JSON.parse(String(raw));
-      } catch {
-        return;
-      }
+    function onMsg(ev) {
+      const msg = parseWsMessage(ev);
+      if (!msg) return;
       if (msg.type === "res" && msg.id === id) {
         clearTimeout(timer);
         ws.removeEventListener("message", onMsg);
@@ -54,13 +61,9 @@ function waitForEvent(ws, eventName, timeoutMs = 10_000) {
       () => reject(new Error(`timeout waiting for event=${eventName}`)),
       timeoutMs,
     );
-    function onMsg(raw) {
-      let msg;
-      try {
-        msg = JSON.parse(String(raw));
-      } catch {
-        return;
-      }
+    function onMsg(ev) {
+      const msg = parseWsMessage(ev);
+      if (!msg) return;
       if (msg.type === "event" && msg.event === eventName) {
         clearTimeout(timer);
         ws.removeEventListener("message", onMsg);
@@ -247,13 +250,9 @@ async function main() {
     `\n[sidecar] Listening for device pairing requests for ${PAIRING_WINDOW_MS / 1000}s...`,
   );
 
-  const pairingListener = (raw) => {
-    let msg;
-    try {
-      msg = JSON.parse(String(raw));
-    } catch {
-      return;
-    }
+  const pairingListener = (ev) => {
+    const msg = parseWsMessage(ev);
+    if (!msg) return;
     if (msg.type === "event" && msg.event === "device.pair.requested") {
       const req = msg.payload;
       console.log(
