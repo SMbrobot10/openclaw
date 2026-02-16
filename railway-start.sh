@@ -1,14 +1,15 @@
 #!/bin/sh
 set -e
 
-# Ensure state directory exists
+# Ensure state directory and workspace exist
 mkdir -p "${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+mkdir -p "${OPENCLAW_WORKSPACE_DIR:-/data/workspace}"
 
 CONFIG_PATH="${OPENCLAW_STATE_DIR:-/data/.openclaw}/openclaw.json"
 
-# Write initial config if none exists
-if [ ! -f "$CONFIG_PATH" ]; then
-  cat > "$CONFIG_PATH" <<'EOF'
+# Always write config (overwrite) to ensure it stays in sync with env vars.
+# OPENCLAW_GATEWAY_TOKEN and ANTHROPIC_API_KEY are read from env at runtime.
+cat > "$CONFIG_PATH" <<'EOF'
 {
   "gateway": {
     "auth": {
@@ -20,10 +21,7 @@ if [ ! -f "$CONFIG_PATH" ]; then
   }
 }
 EOF
-  echo "Wrote initial config to $CONFIG_PATH"
-else
-  echo "Config already exists at $CONFIG_PATH"
-fi
+echo "Config written to $CONFIG_PATH"
 
 # Start the gateway
 exec node openclaw.mjs gateway --allow-unconfigured --port 8080 --bind lan
