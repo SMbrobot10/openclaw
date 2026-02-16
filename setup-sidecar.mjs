@@ -146,6 +146,10 @@ async function main() {
   console.log("[sidecar] Connecting to gateway via loopback...");
   const ws = new WebSocket(GATEWAY_URL);
 
+  // Set up the challenge listener BEFORE the connection opens to avoid
+  // a race condition where the server sends the challenge immediately.
+  const challengePromise = waitForEvent(ws, "connect.challenge", 15_000);
+
   ws.addEventListener("error", (err) => {
     console.error("[sidecar] WebSocket error:", err.message || err);
     process.exit(1);
@@ -157,8 +161,8 @@ async function main() {
   });
   console.log("[sidecar] Connected. Waiting for challenge...");
 
-  // 1. Wait for connect.challenge
-  const challenge = await waitForEvent(ws, "connect.challenge");
+  // 1. Wait for connect.challenge (listener already set up)
+  const challenge = await challengePromise;
   console.log("[sidecar] Got challenge, nonce:", challenge.nonce);
 
   // 2. Build device auth payload and sign
