@@ -8,7 +8,6 @@
 import { randomUUID } from "node:crypto";
 
 const GATEWAY_URL = "ws://localhost:8080";
-const PAIRING_WINDOW_MS = 120_000; // 2 minutes to approve browser pairing requests
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -245,9 +244,11 @@ async function main() {
   console.log("[sidecar] ── Health ──");
   console.log(JSON.stringify(healthResult, null, 2));
 
-  // 6. Auto-approve incoming device pairing requests for PAIRING_WINDOW_MS
+  // 6. Auto-approve device pairing requests continuously.
+  // This runs as a persistent daemon so browsers can pair at any time.
+  // The gateway token is the security boundary.
   console.log(
-    `\n[sidecar] Listening for device pairing requests for ${PAIRING_WINDOW_MS / 1000}s...`,
+    "\n[sidecar] Running as persistent pairing daemon (auto-approves all device pairing requests)...",
   );
 
   const pairingListener = (ev) => {
@@ -274,46 +275,41 @@ async function main() {
   };
   ws.addEventListener("message", pairingListener);
 
-  // Also check for any already-pending pairing requests
-  try {
-    const listId = sendReq(ws, "device.pair.list");
-    const listResult = await waitForRes(ws, listId, 10_000);
-    const pending = listResult?.pending || [];
-    if (pending.length > 0) {
-      console.log(
-        `[sidecar] Found ${pending.length} pending pairing request(s), auto-approving...`,
-      );
+  // Periodically check for pending pairing requests that arrived before
+  // the event listener was active (e.g., during reconnect).
+  async function approvePending() {
+    try {
+      const listId = sendReq(ws, "device.pair.list");
+      const listResult = await waitForRes(ws, listId, 10_000);
+      const pending = listResult?.pending || [];
       for (const req of pending) {
+        console.log(
+          `[sidecar] Auto-approving pending device: ${req.deviceId} (${req.displayName || req.clientId})`,
+        );
         const approveId = sendReq(ws, "device.pair.approve", {
           requestId: req.requestId,
         });
         try {
           await waitForRes(ws, approveId, 10_000);
-          console.log(
-            `[sidecar] Approved pending device: ${req.deviceId}`,
-          );
+          console.log(`[sidecar] Approved: ${req.deviceId}`);
         } catch (err) {
-          console.error(
-            `[sidecar] Failed to approve pending device: ${err.message}`,
-          );
+          console.error(`[sidecar] Approval failed: ${err.message}`);
         }
       }
+    } catch {
+      // ignore errors in periodic check
     }
-  } catch {
-    // device.pair.list might not exist
   }
 
-  // Wait for the pairing window, then clean up
-  await new Promise((r) => setTimeout(r, PAIRING_WINDOW_MS));
-  ws.removeEventListener("message", pairingListener);
+  // Check immediately and then every 30 seconds
+  await approvePending();
+  setInterval(approvePending, 30_000);
 
-  console.log("[sidecar] Pairing window closed. Disconnecting.");
-  ws.close();
-  await new Promise((r) => setTimeout(r, 1000));
-
+  // Keep alive forever - the gateway process is the main process
   console.log("[sidecar] ========================================");
-  console.log("[sidecar] Gateway configuration complete!");
+  console.log("[sidecar] Gateway configured. Pairing daemon running.");
   console.log("[sidecar] ========================================");
+  await new Promise(() => {}); // block forever
 }
 
 main().catch((err) => {
